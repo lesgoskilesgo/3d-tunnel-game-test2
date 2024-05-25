@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Tunnel Game</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        .hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div class="hud">
+        <div>Score: <span id="score">0</span></div>
+        <div>Lives: <span id="lives">3</span></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script>
+        let scene, camera, renderer;
+        let player, tunnel;
+        let obstacles = [];
+        let collectibles = [];
+        let lines = [];
+        let score = 0;
+        let lives = 3;
+        let invertedControls = false;
+        const moveSpeed = 0.1;
+        const tunnelLength = 100;
+        const bounds = 4; // Limit for player's movement
+        const keysPressed = {};
+
+        init();
+        animate();
+
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(100, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Tunnel setup
+            const tunnelGeometry = new THREE.CylinderGeometry(5, 5, tunnelLength, 32, 1, true);
+            const tunnelMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
+            tunnel = new THREE.Mesh(tunnelGeometry, tunnelMaterial);
+            tunnel.rotation.z = Math.PI / 2;
+            scene.add(tunnel);
+
+            // Load player model
+            const loader = new THREE.GLTFLoader();
+            loader.load('X-WING.glb', function(gltf) {
+                player = gltf.scene;
+                player.scale.set(0.5, 0.5, 0.5); // Scale down the model
+                player.position.z = 1;
+                player.rotation.x = -Math.PI / 2; // Initial rotation
+                scene.add(player);
+            }, undefined, function(error) {
+                console.error(error);
+            });
+
+            // Perspective lines
+            addPerspectiveLines();
+
+            // Camera position
+            camera.position.z = 5;
+
+            // Event listeners for controls
+            document.addEventListener('keydown', onDocumentKeyDown);
+            document.addEventListener('keyup', onDocumentKeyUp);
+
+            // Create initial collectibles and obstacles
+            createCollectibles();
+            createObstacles();
+        }
+
+        function addPerspectiveLines() {
+            const material = new THREE.LineBasicMaterial({ color: 0xffffff });
+
+            // Add squares at different depths
+            for (let z = -10; z > -tunnelLength; z -= 10) {
+                addSquare(material, z);
+            }
+
+            // Add diagonal lines
+            addDiagonalLines(material);
+        }
+
+        function addSquare(material, z) {
+            const points = [
+                new THREE.Vector3(-bounds, -bounds, z),
+                new THREE.Vector3(bounds, -bounds, z),
+                new THREE.Vector3(bounds, bounds, z),
+                new THREE.Vector3(-bounds, bounds, z),
+                new THREE.Vector3(-bounds, -bounds, z)
+            ];
+
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(geometry, material);
+            scene.add(line);
+            lines.push(line);
+        }
+
+        function addDiagonalLines(material) {
+            // Modifica delle coordinate del punto di incontro lungo l'asse z
+            const pointOfIntersection = new THREE.Vector3(0, 0, -tunnelLength - 5000); // Ad esempio, sposto il punto di incontro 50 unità più lontano
+
+            const geometry1 = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(-bounds, -bounds, 0),
+                pointOfIntersection
+            ]);
+            const line1 = new THREE.Line(geometry1, material);
+            scene.add(line1);
+            lines.push(line1);
+
+            const geometry2 = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(bounds, -bounds, 0),
+                pointOfIntersection
+            ]);
+            const line2 = new THREE.Line(geometry2, material);
+            scene.add(line2);
+            lines.push(line2);
+
+            const geometry3 = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(-bounds, bounds, 0),
+                pointOfIntersection
+            ]);
+            const line3 = new THREE.Line(geometry3, material);
+            scene.add(line3);
+            lines.push(line3);
+
+            const geometry4 = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(bounds, bounds, 0),
+                pointOfIntersection
+            ]);
+            const line4 = new THREE.Line(geometry4, material);
+            scene.add(line4);
+            lines.push(line4);
+        }
+
+        function addLine(x1, y1, z1, x2, y2, z2) {
+            const material = new THREE.LineBasicMaterial({ color: 0xff00ff });
+
+            const geometry = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(x1, y1, z1),
+                new THREE.Vector3(x2, y2, z2)
+            ]);
+
+            const line = new THREE.Line(geometry, material);
+            scene.add(line);
+        }
+
+        function createCollectible() {
+            const geometry = new THREE.SphereGeometry(0.2, 16, 16);
+            const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            const collectible = new THREE.Mesh(geometry, material);
+            collectible.position.set(
+                (Math.random() - 0.5) * 2 * bounds,
+                (Math.random() - 0.5) * 2 * bounds,
+                -Math.random() * tunnelLength
+            );
+            scene.add(collectible);
+            collectibles.push(collectible);
+        }
+
+        function createCollectibles() {
+            for (let i = 0; i < 10; i++) {
+                createCollectible();
+            }
+        }
+
+        function createObstacle() {
+            const geometry = new THREE.BoxGeometry(1, 1, 1);
+            const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const edges = new THREE.EdgesGeometry(geometry);
+            const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffffff }));
+            const obstacle = new THREE.Mesh(geometry, material);
+            obstacle.add(line); // Add the edges to the obstacle
+            obstacle.position.set(
+                (Math.random() - 0.5) * 2 * bounds,
+                (Math.random() - 0.5) * 2 * bounds,
+                -Math.random() * tunnelLength
+            );
+            scene.add(obstacle);
+            obstacles.push(obstacle);
+        }
+
+        function createObstacles() {
+            for (let i = 0; i < 10; i++) {
+                createObstacle();
+            }
+        }
+
+        function checkCollisionWithObstacle(obstacle) {
+            const playerBox = new THREE.Box3().setFromObject(player);
+            const obstacleBox = new THREE.Box3().setFromObject(obstacle);
+            return playerBox.intersectsBox(obstacleBox);
+        }
+
+        function onDocumentKeyDown(event) {
+            keysPressed[event.key] = true;
+        }
+
+        function onDocumentKeyUp(event) {
+            keysPressed[event.key] = false;
+        }
+
+        function updatePlayerPosition() {
+            if (!player) return; // Check if player is defined
+            if (invertedControls) {
+                if (keysPressed['w']) {
+                    if (player.position.y > -bounds) {
+                        player.position.y -= moveSpeed;
+                    }
+                }
+                if (keysPressed['s']) {
+                    if (player.position.y < bounds) {
+                        player.position.y += moveSpeed;
+                    }
+                }
+                if (keysPressed['a']) {
+                    if (player.position.x < bounds) {
+                        player.position.x += moveSpeed;
+                    }
+                }
+                if (keysPressed['d']) {
+                    if (player.position.x > -bounds) {
+                        player.position.x -= moveSpeed;
+                    }
+                }
+            } else {
+                if (keysPressed['w']) {
+                    if (player.position.y < bounds) {
+                        player.position.y += moveSpeed;
+                    }
+                }
+                if (keysPressed['s']) {
+                    if (player.position.y > -bounds) {
+                        player.position.y -= moveSpeed;
+                    }
+                }
+                if (keysPressed['a']) {
+                    if (player.position.x > -bounds) {
+                        player.position.x -= moveSpeed;
+                    }
+                }
+                if (keysPressed['d']) {
+                    if (player.position.x < bounds) {
+                        player.position.x += moveSpeed;
+                    }
+                }
+            }
+        }
+
+        function updatePlayerRotation() {
+            if (!player) return; // Check if player is defined
+            const movingUp = keysPressed['w'];
+            const movingDown = keysPressed['s'];
+            const movingLeft = keysPressed['a'];
+            const movingRight = keysPressed['d'];
+
+            player.rotation.x = 0;
+            player.rotation.y = 0;
+            player.rotation.z = 0;
+            if (movingUp || movingDown || movingLeft || movingRight) {
+                if (movingUp && movingLeft) {
+                    player.rotation.z = Math.PI / 4;
+                } else if (movingUp && movingRight) {
+                    player.rotation.z = -Math.PI / 4;
+                } else if (movingDown && movingLeft) {
+                    player.rotation.z = Math.PI / 4 * 3;
+                } else if (movingDown && movingRight) {
+                    player.rotation.z = -Math.PI / 4 * 3;
+                } else if (movingUp) {
+                    player.rotation.x = 0;
+                } else if (movingDown) {
+                    player.rotation.x = Math.PI;
+                } else if (movingLeft) {
+                    player.rotation.z = Math.PI / 2;
+                } else if (movingRight) {
+                    player.rotation.z = -Math.PI / 2;
+                }
+            } else {
+                // Reset rotation if no keys are pressed
+                player.rotation.x = -Math.PI / 2;
+                player.rotation.z = 0;
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Check score and invert controls if necessary
+            if (score >= 500) {
+                invertedControls = true;
+            } else {
+                invertedControls = false;
+            }
+
+            // Update player position and rotation
+            if (player) {
+                updatePlayerPosition();
+                updatePlayerRotation();
+            }
+
+            // Move tunnel and objects
+            tunnel.position.z += moveSpeed;
+            collectibles.forEach(c => c.position.z += moveSpeed);
+            obstacles.forEach(o => o.position.z += moveSpeed);
+            lines.forEach(line => line.position.z += moveSpeed);
+
+            // Check for collectible collisions
+            collectibles = collectibles.filter(c => {
+                if (player && player.position.distanceTo(c.position) < 0.5) {
+                    score += 10;
+                    document.getElementById('score').innerText = score;
+                    scene.remove(c);
+                    return false;
+                }
+                return true;
+            });
+
+            // Ensure there are always collectibles
+            while (collectibles.length < 10) {
+                createCollectible();
+            }
+
+            // Check for obstacle collisions
+            obstacles.forEach(o => {
+                if (player && checkCollisionWithObstacle(o)) {
+                    // Handle collision with obstacle (lose a life)
+                    lives -= 1;
+                    document.getElementById('lives').innerText = lives;
+                    scene.remove(o);
+                    if (lives <= 0) {
+                        alert('Game Over! Your final score is ' + score);
+                        window.location.reload();
+                    }
+                }
+            });
+
+            // Ensure there are always obstacles
+            while (obstacles.length < 10) {
+                createObstacle();
+            }
+
+            // Reset positions if objects move out of view
+            if (tunnel.position.z > 0) {
+                tunnel.position.z %= tunnelLength;
+            }
+
+            collectibles.forEach(c => {
+                if (c.position.z > 5) {
+                    c.position.z -= tunnelLength;
+                }
+            });
+
+            obstacles.forEach(o => {
+                if (o.position.z > 5) {
+                    o.position.z -= tunnelLength;
+                }
+            });
+
+            resetLines();
+
+            // Update camera position to follow the player
+            if (player) {
+                camera.position.x = player.position.x;
+                camera.position.y = player.position.y + 1.5;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function resetLines() {
+            lines.forEach(line => {
+                if (line.position.z > 0) {
+                    line.position.z -= tunnelLength;
+                }
+            });
+        }
+    </script>
+</body>
+</html>
